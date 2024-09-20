@@ -29,6 +29,9 @@ if not exist .env (
 	echo Skipping .env copying
 )
 
+git fetch
+git pull
+
 echo Starting the bot...
 python main.py
 

@@ -7,27 +7,31 @@
 > 🇷 🇺 README in russian available [here](README-RU.md)
 
 ## Features  
-| Feature                                                   | Supported |
-|-----------------------------------------------------------|:---------:|
-| Multithreading                                            |     ✅     |
-| Proxy binding to session                                  |     ✅     |
-| Support for tdata / pyrogram .session / telethon .session |     ✅     |
-| Registration in bot                                       |     ✅     |
-| Auto-tasks                                                |     ✅     |
-| Daily rewards                                             |     ✅     |
-| Auto verification                                         |     ✅     |
-| Token Staking                                             |     ✅     |
+| Feature                       | Supported |
+|-------------------------------|:---------:|
+| Multithreading                |     ✅     |
+| Proxy binding to session      |     ✅     |
+| Registration in bot           |     ✅     |
+| Auto-tasks                    |     ✅     |
+| Daily rewards                 |     ✅     |
+| Auto verification             |     ✅     |
+| Token Staking                 |     ✅     |
+| Support for telethon .session |     ✅     |
 
 
 ## [Settings](https://github.com/Desamod/BoolBot/blob/master/.env-example/)
-| Settings                |                                 Description                                 |
-|-------------------------|:---------------------------------------------------------------------------:|
-| **API_ID / API_HASH**   | Platform data from which to run the Telegram session (by default - android) |
-| **SLEEP_TIME**          |           Sleep time between cycles (by default - [7200, 10800])            |
-| **AUTO_TASK**           |                         Auto tasks (default - True)                         |
-| **STAKING**             |      Auto staking your tokens for user verifying flow (default - True)      |
-| **USE_REF**             |               Use ref link for registration (default - True)                |
-| **USE_PROXY_FROM_FILE** | Whether to use a proxy from the bot/config/proxies.txt file (True / False)  |
+| Settings                |                                                                                                                  Description                                                                                                                  |
+|-------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
+| **API_ID / API_HASH**   |                                                                                  Platform data from which to run the Telegram session (by default - android)                                                                                  |
+| **GLOBAL_CONFIG_PATH**  | Specifies the global path for accounts_config, proxies, sessions. <br/>Specify an absolute path or use an environment variable (default environment variable: **TG_FARM**) <br/>If no environment variable exists, uses the script directory. |
+| **SLEEP_TIME**          |                                                                                            Sleep time between cycles (by default - [7200, 10800])                                                                                             |
+| **AUTO_TASK**           |                                                                                                        Auto tasks (default - **True**)                                                                                                        |
+| **STAKING**             |                                                                                     Auto staking your tokens for user verifying flow (default - **True**)                                                                                     |
+| **RANDOM_DELAY_IN_RUN** |                                                                      Random seconds delay for each session to start from 1 to this value (default : **30**, means 1..30)                                                                      |
+| **REF_ID**              |                                                                                                       Your referral id after startapp=                                                                                                        |
+| **USE_PROXY_FROM_FILE** |                                                                                Whether to use a proxy from the bot/config/proxies.txt file (True / **False**)                                                                                 |
+| **DEVICE_PARAMS**       |                                                                          Enter device settings to make the telegram session look more realistic  (True / **False**)                                                                           |
+| **DEBUG_LOGGING**       |                                                                                     Whether to log error's tracebacks to /logs folder (True / **False**)                                                                                      |
 
 ## Quick Start 📚
 
