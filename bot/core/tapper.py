@@ -9,12 +9,13 @@ from urllib.parse import unquote
 from aiocfscrape import CloudflareScraper
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
+from datetime import datetime, timedelta
 from time import time
 
 from telethon import TelegramClient
 from telethon.errors import *
-from telethon.types import InputUser, InputBotAppShortName, InputPeerUser
-from telethon.functions import messages, contacts, channels
+from telethon.types import InputUser, InputBotAppShortName, InputPeerUser, InputNotifyPeer, InputPeerNotifySettings
+from telethon.functions import messages, contacts, channels, account
 
 from .agents import generate_random_user_agent
 from .headers import *
@@ -56,77 +57,55 @@ class Tapper:
             proxy_dict = proxy_utils.to_telethon_proxy(proxy)
         else:
             proxy_dict = None
-
         self.tg_client.set_proxy(proxy_dict)
-        try:
-            if not self.tg_client.is_connected():
-                try:
-                    self.lock.acquire()
-                    await self.tg_client.start()
-                except (UnauthorizedError, AuthKeyUnregisteredError):
-                    raise InvalidSession(self.session_name)
-                except (UserDeactivatedError, UserDeactivatedBanError, PhoneNumberBannedError):
-                    raise InvalidSession(f"{self.session_name}: User is banned")
 
-            while True:
-                try:
-                    resolve_result = await self.tg_client(contacts.ResolveUsernameRequest(username='boolfamily_Bot'))
-                    peer = InputPeerUser(user_id=resolve_result.peer.user_id,
-                                         access_hash=resolve_result.users[0].access_hash)
-                    break
-                except FloodWaitError as fl:
-                    fls = fl.seconds
+        tg_web_data = None
+        with self.lock:
+            async with self.tg_client as client:
+                while True:
+                    try:
+                        resolve_result = await client(contacts.ResolveUsernameRequest(username='boolfamily_Bot'))
+                        peer = InputPeerUser(user_id=resolve_result.peer.user_id,
+                                             access_hash=resolve_result.users[0].access_hash)
+                        break
+                    except FloodWaitError as fl:
+                        fls = fl.seconds
 
-                    logger.warning(self.log_message(f"FloodWait {fl}"))
-                    logger.info(self.log_message(f"Sleep {fls}s"))
-                    await asyncio.sleep(fls + 3)
+                        logger.warning(self.log_message(f"FloodWait {fl}"))
+                        logger.info(self.log_message(f"Sleep {fls}s"))
+                        await asyncio.sleep(fls + 3)
 
-            ref_id = settings.REF_ID if random.randint(0, 100) <= 85 else "8T1K2"
+                ref_id = settings.REF_ID if random.randint(0, 100) <= 85 else "8T1K2"
 
-            input_user = InputUser(user_id=resolve_result.peer.user_id, access_hash=resolve_result.users[0].access_hash)
-            input_bot_app = InputBotAppShortName(bot_id=input_user, short_name="join")
+                input_user = InputUser(user_id=resolve_result.peer.user_id, access_hash=resolve_result.users[0].access_hash)
+                input_bot_app = InputBotAppShortName(bot_id=input_user, short_name="join")
 
-            web_view = await self.tg_client(messages.RequestAppWebViewRequest(
-                peer=peer,
-                app=input_bot_app,
-                platform='android',
-                write_allowed=True,
-                start_param=ref_id
-            ))
+                web_view = await self.tg_client(messages.RequestAppWebViewRequest(
+                    peer=peer,
+                    app=input_bot_app,
+                    platform='android',
+                    write_allowed=True,
+                    start_param=ref_id
+                ))
 
-            auth_url = web_view.url
-            tg_web_data = unquote(
-                string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
-            tg_web_data_parts = tg_web_data.split('&')
+                auth_url = web_view.url
+                tg_web_data = unquote(
+                    string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
+                tg_web_data_parts = tg_web_data.split('&')
 
-            user_data = tg_web_data_parts[0].split('=')[1]
-            chat_instance = tg_web_data_parts[1].split('=')[1]
-            chat_type = tg_web_data_parts[2].split('=')[1]
-            start_param = '\nstart_param=' + tg_web_data_parts[3].split('=')[1]
-            auth_date = tg_web_data_parts[4].split('=')[1]
-            hash_value = tg_web_data_parts[5].split('=')[1]
+                user_data = tg_web_data_parts[0].split('=')[1]
+                chat_instance = tg_web_data_parts[1].split('=')[1]
+                chat_type = tg_web_data_parts[2].split('=')[1]
+                start_param = '\nstart_param=' + tg_web_data_parts[3].split('=')[1]
+                auth_date = tg_web_data_parts[4].split('=')[1]
+                hash_value = tg_web_data_parts[5].split('=')[1]
 
-            user = user_data.replace('"', '\"')
-            self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}{start_param}\nuser={user}"
-            self.hash = hash_value
-            self.tg_id = user.split('"id":')[1].split(',')[0]
+                user = user_data.replace('"', '\"')
+                self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}{start_param}\nuser={user}"
+                self.hash = hash_value
+                self.tg_id = user.split('"id":')[1].split(',')[0]
 
-            if self.tg_client.is_connected():
-                await self.tg_client.disconnect()
-                if self.lock.acquired:
-                    self.lock.release()
-
-            return tg_web_data
-
-        except InvalidSession as error:
-            log_error(self.log_message("Invalid session"))
-            await asyncio.sleep(delay=3)
-            return None
-
-        except Exception as error:
-            log_error(self.log_message(f"Unknown error: {error}"))
-            await asyncio.sleep(delay=3)
-            return None
+        return tg_web_data
 
     async def get_strict_data(self, http_client: aiohttp.ClientSession):
         try:
@@ -386,31 +365,38 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when performing transaction: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def join_tg_channel(self, link: str):
+    async def join_and_mute_tg_channel(self, link: str):
         path = link.replace("https://t.me/", "")
         if path == 'money':
             return
-        self.lock.acquire()
 
-        async with self.tg_client as client:
-
-            if path.startswith('+'):
+        with self.lock:
+            async with self.tg_client as client:
                 try:
-                    invite_hash = path[1:]
-                    result = await client(messages.ImportChatInviteRequest(hash=invite_hash))
-                    logger.info(self.log_message(f"Joined to channel: <y>{result.chats[0].title}</y>"))
-                    await asyncio.sleep(random.uniform(10, 20))
+                    if path.startswith('+'):
+                        invite_hash = path[1:]
+                        result = await client(messages.ImportChatInviteRequest(hash=invite_hash))
+                        channel_title = result.chats[0].title
+                        entity = result.chats[0]
+                    else:
+                        entity = await client.get_entity(f'@{path}')
+                        await client(channels.JoinChannelRequest(channel=entity))
+                        channel_title = entity.title
 
+                    await asyncio.sleep(1)
+
+                    await client(account.UpdateNotifySettingsRequest(
+                        peer=InputNotifyPeer(entity),
+                        settings=InputPeerNotifySettings(
+                            show_previews=False,
+                            silent=True,
+                            mute_until=datetime.today() + timedelta(days=365)
+                        )
+                    ))
+
+                    logger.info(self.log_message(f"Subscribe to channel: <y>{channel_title}</y>"))
                 except Exception as e:
-                    log_error(self.log_message(f"(Task) Error while join tg channel: {e}"))
-            else:
-                try:
-                    await client(channels.JoinChannelRequest(channel=f'@{path}'))
-                    logger.info(self.log_message(f"Joined to channel: <y>{link}</y>"))
-                except Exception as e:
-                    log_error(self.log_message(f"(Task) Error while join tg channel: {e}"))
-        if self.lock.acquired:
-            self.lock.release()
+                    log_error(self.log_message(f"(Task) Error while subscribing to tg channel: {e}"))
 
     async def check_daily_reward(self, http_client: aiohttp.ClientSession):
         try:
@@ -569,7 +555,7 @@ class Tapper:
                             await asyncio.sleep(delay=random.randint(3, 10))
                             subscribed = await self.check_user_subscription(http_client=http_client)
                             if not subscribed:
-                                await self.join_tg_channel('https://t.me/boolofficial')
+                                await self.join_and_mute_tg_channel('https://t.me/boolofficial')
                             else:
                                 await self.verify_account(http_client=http_client)
 
