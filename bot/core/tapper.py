@@ -39,6 +39,8 @@ class Tapper:
         self.headers['User-Agent'] = self.check_user_agent()
         self.headers.update(**get_sec_ch_ua(self.headers.get('User-Agent', '')))
 
+        self._webview_data = None
+
     def log_message(self, message) -> str:
         return f"<light-yellow>{self.session_name}</light-yellow> | {message}"
 
@@ -62,27 +64,27 @@ class Tapper:
         tg_web_data = None
         with self.lock:
             async with self.tg_client as client:
-                while True:
-                    try:
-                        resolve_result = await client(contacts.ResolveUsernameRequest(username='boolfamily_Bot'))
-                        peer = InputPeerUser(user_id=resolve_result.peer.user_id,
-                                             access_hash=resolve_result.users[0].access_hash)
-                        break
-                    except FloodWaitError as fl:
-                        fls = fl.seconds
+                if not self._webview_data:
+                    while True:
+                        try:
+                            resolve_result = await client(contacts.ResolveUsernameRequest(username='boolfamily_Bot'))
+                            user = resolve_result.users[0]
+                            peer = InputPeerUser(user_id=user.id, access_hash=user.access_hash)
+                            input_user = InputUser(user_id=user.id, access_hash=user.access_hash)
+                            input_bot_app = InputBotAppShortName(bot_id=input_user, short_name="join")
+                            self._webview_data = {'peer': peer, 'app': input_bot_app}
+                            break
+                        except FloodWaitError as fl:
+                            fls = fl.seconds
 
-                        logger.warning(self.log_message(f"FloodWait {fl}"))
-                        logger.info(self.log_message(f"Sleep {fls}s"))
-                        await asyncio.sleep(fls + 3)
+                            logger.warning(self.log_message(f"FloodWait {fl}"))
+                            logger.info(self.log_message(f"Sleep {fls}s"))
+                            await asyncio.sleep(fls + 3)
 
                 ref_id = settings.REF_ID if random.randint(0, 100) <= 85 else "8T1K2"
 
-                input_user = InputUser(user_id=resolve_result.peer.user_id, access_hash=resolve_result.users[0].access_hash)
-                input_bot_app = InputBotAppShortName(bot_id=input_user, short_name="join")
-
                 web_view = await client(messages.RequestAppWebViewRequest(
-                    peer=peer,
-                    app=input_bot_app,
+                    **self._webview_data,
                     platform='android',
                     write_allowed=True,
                     start_param=ref_id
@@ -91,14 +93,13 @@ class Tapper:
                 auth_url = web_view.url
                 tg_web_data = unquote(
                     string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
-                tg_web_data_parts = tg_web_data.split('&')
 
-                user_data = tg_web_data_parts[0].split('=')[1]
-                chat_instance = tg_web_data_parts[1].split('=')[1]
-                chat_type = tg_web_data_parts[2].split('=')[1]
-                start_param = '\nstart_param=' + tg_web_data_parts[3].split('=')[1]
-                auth_date = tg_web_data_parts[4].split('=')[1]
-                hash_value = tg_web_data_parts[5].split('=')[1]
+                user_data = re.findall(r'user=([^&]+)', tg_web_data)[0]
+                chat_instance = re.findall(r'chat_instance=([^&]+)', tg_web_data)[0]
+                chat_type = re.findall(r'chat_type=([^&]+)', tg_web_data)[0]
+                start_param = '\nstart_param=' + re.findall(r'start_param=([^&]+)', tg_web_data)[0]
+                auth_date = re.findall(r'auth_date=([^&]+)', tg_web_data)[0]
+                hash_value = re.findall(r'hash=([^&]+)', tg_web_data)[0]
 
                 user = user_data.replace('"', '\"')
                 self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}{start_param}\nuser={user}"
@@ -147,14 +148,15 @@ class Tapper:
             log_error(self.log_message(f"Unknown error during registration: {error}"))
             await asyncio.sleep(delay=random.randint(3, 7))
 
-    async def check_proxy(self, http_client: aiohttp.ClientSession, proxy: str) -> bool:
+    async def check_proxy(self, http_client: aiohttp.ClientSession) -> bool:
+        proxy_conn = http_client._connector
         try:
-            response = await http_client.get(url='https://httpbin.org/ip', timeout=aiohttp.ClientTimeout(10))
-            ip = (await response.json()).get('origin')
-            logger.info(self.log_message(f"Proxy IP: {ip}"))
+            response = await http_client.get(url='https://ifconfig.me/ip', timeout=aiohttp.ClientTimeout(15))
+            logger.info(self.log_message(f"Proxy IP: {await response.text()}"))
             return True
         except Exception as error:
-            log_error(self.log_message(f"Proxy: {proxy} | Error: {error}"))
+            proxy_url = f"{proxy_conn._proxy_type}://{proxy_conn._proxy_host}:{proxy_conn._proxy_port}"
+            log_error(self.log_message(f"Proxy: {proxy_url} | Error: {type(error).__name__}"))
             return False
 
     async def do_task(self, http_client: aiohttp.ClientSession, task_name: str, task_id: int):
@@ -476,99 +478,92 @@ class Tapper:
         await asyncio.sleep(random_delay)
 
         access_token_created_time = 0
-
-        proxy_conn = None
-        if self.proxy:
-            proxy_conn = ProxyConnector().from_url(self.proxy)
-            http_client = CloudflareScraper(headers=self.headers, connector=proxy_conn)
-            p_type = proxy_conn._proxy_type
-            p_host = proxy_conn._proxy_host
-            p_port = proxy_conn._proxy_port
-            if not await self.check_proxy(http_client=http_client, proxy=f"{p_type}://{p_host}:{p_port}"):
-                return
-        else:
-            http_client = CloudflareScraper(headers=self.headers)
+        tg_web_data = None
 
         token_live_time = random.randint(3500, 3600)
+
         while True:
-            try:
-                sleep_time = random.randint(settings.SLEEP_TIME[0], settings.SLEEP_TIME[1])
-                if time() - access_token_created_time >= token_live_time:
-                    tg_web_data = await self.get_tg_web_data()
-                    if not tg_web_data:
-                        if not http_client.closed:
-                            await http_client.close()
-                        if proxy_conn and not proxy_conn.closed:
-                            proxy_conn.close()
-                        return
+            proxy_conn = {'connector': ProxyConnector.from_url(self.proxy)} if self.proxy else {}
+            async with CloudflareScraper(headers=self.headers, timeout=aiohttp.ClientTimeout(60), **proxy_conn) as http_client:
+                if not await self.check_proxy(http_client=http_client):
+                    logger.warning(self.log_message('Failed to connect to proxy server. Sleep 5 minutes.'))
+                    await asyncio.sleep(300)
+                    continue
+                try:
+                    sleep_time = random.randint(settings.SLEEP_TIME[0], settings.SLEEP_TIME[1])
+                    if time() - access_token_created_time >= token_live_time:
+                        tg_web_data = await self.get_tg_web_data()
 
-                    access_token_created_time = time()
-                    token_live_time = random.randint(3500, 3600)
+                        if not tg_web_data:
+                            raise InvalidSession('Failed to get webview URL')
 
-                    strict_data = await self.get_strict_data(http_client=http_client)
-                    if strict_data is None:
-                        await asyncio.sleep(delay=random.randint(1, 3))
-                        user_id = await self.register_user(http_client=http_client)
-                        if user_id is not None:
-                            strict_data = await self.get_strict_data(http_client=http_client)
+                        access_token_created_time = time()
+                        token_live_time = random.randint(3500, 3600)
 
-                    balance = strict_data['rewardValue']
-                    rank = strict_data['rank']
-                    logger.info(self.log_message(f"Balance: <e>{balance}</e> tBOL | "
-                                                 f"Rank: <fg #ffbcd9>{rank}</fg #ffbcd9>"))
+                        strict_data = await self.get_strict_data(http_client=http_client)
+                        if strict_data is None:
+                            await asyncio.sleep(delay=random.randint(1, 3))
+                            user_id = await self.register_user(http_client=http_client)
+                            if user_id is not None:
+                                strict_data = await self.get_strict_data(http_client=http_client)
 
-                    await self.check_daily_reward(http_client=http_client)
+                        balance = strict_data['rewardValue']
+                        rank = strict_data['rank']
+                        logger.info(self.log_message(f"Balance: <e>{balance}</e> tBOL | "
+                                                     f"Rank: <fg #ffbcd9>{rank}</fg #ffbcd9>"))
 
-                    if settings.AUTO_TASK:
-                        await asyncio.sleep(delay=random.randint(3, 5))
-                        await self.processing_tasks(http_client=http_client)
+                        await self.check_daily_reward(http_client=http_client)
 
-                    if settings.STAKING:
-                        await asyncio.sleep(delay=random.randint(3, 5))
-                        balance = await self.get_staking_balance(http_client=http_client,
-                                                                 wallet_address=strict_data['evmAddress'])
-                        user_staking = await self.get_user_staking(http_client=http_client,
-                                                                   wallet_address=strict_data['evmAddress'])
+                        if settings.AUTO_TASK:
+                            await asyncio.sleep(delay=random.randint(3, 5))
+                            await self.processing_tasks(http_client=http_client)
 
-                        if user_staking is None or len(user_staking) == 0 and not strict_data['isVerify']:
-                            if balance > settings.MIN_STAKING_BALANCE:
-                                record = await self.get_staking_record(http_client=http_client, page=1)
-                                if record is not None:
-                                    voters = record['voterCount']
-                                    apy = round(record['yield'] * 100, 2)
-                                    logger.info(self.log_message(
-                                        f'Staking record found | APY: <lc>{apy}%</lc> | Voters: <y>{voters}</y>'))
-                                    await asyncio.sleep(delay=random.randint(3, 5))
-                                    data = await self.make_staking(http_client=http_client,
-                                                                   device_id=record['deviceID'], amount=balance)
-                                    if data is not None:
+                        if settings.STAKING:
+                            await asyncio.sleep(delay=random.randint(3, 5))
+                            balance = await self.get_staking_balance(http_client=http_client,
+                                                                     wallet_address=strict_data['evmAddress'])
+                            user_staking = await self.get_user_staking(http_client=http_client,
+                                                                       wallet_address=strict_data['evmAddress'])
+
+                            if user_staking is None or len(user_staking) == 0 and not strict_data['isVerify']:
+                                if balance > settings.MIN_STAKING_BALANCE:
+                                    record = await self.get_staking_record(http_client=http_client, page=1)
+                                    if record is not None:
+                                        voters = record['voterCount']
+                                        apy = round(record['yield'] * 100, 2)
+                                        logger.info(self.log_message(
+                                            f'Staking record found | APY: <lc>{apy}%</lc> | Voters: <y>{voters}</y>'))
                                         await asyncio.sleep(delay=random.randint(3, 5))
-                                        result = await self.performing_transaction(http_client=http_client,
-                                                                                   data=data,
-                                                                                   wallet_address=strict_data[
-                                                                                       'evmAddress'])
-                                        if result is not None:
-                                            logger.success(self.log_message(
-                                                f"Successfully staked <e>{balance}</e> tBOL"))
+                                        data = await self.make_staking(http_client=http_client,
+                                                                       device_id=record['deviceID'], amount=balance)
+                                        if data is not None:
+                                            await asyncio.sleep(delay=random.randint(3, 5))
+                                            result = await self.performing_transaction(http_client=http_client,
+                                                                                       data=data,
+                                                                                       wallet_address=strict_data[
+                                                                                           'evmAddress'])
+                                            if result is not None:
+                                                logger.success(self.log_message(
+                                                    f"Successfully staked <e>{balance}</e> tBOL"))
 
-                        elif not strict_data['isVerify']:
-                            await asyncio.sleep(delay=random.randint(3, 10))
-                            subscribed = await self.check_user_subscription(http_client=http_client)
-                            if not subscribed:
-                                await self.join_and_mute_tg_channel('https://t.me/boolofficial')
-                            else:
-                                await self.verify_account(http_client=http_client)
+                            elif not strict_data['isVerify']:
+                                await asyncio.sleep(delay=random.randint(3, 10))
+                                subscribed = await self.check_user_subscription(http_client=http_client)
+                                if not subscribed:
+                                    await self.join_and_mute_tg_channel('https://t.me/boolofficial')
+                                else:
+                                    await self.verify_account(http_client=http_client)
 
-            except InvalidSession as error:
-                raise error
+                except InvalidSession as error:
+                    raise error
 
-            except Exception as error:
-                log_error(self.log_message(f"Unknown error: {error}"))
-                await asyncio.sleep(delay=random.randint(60, 120))
+                except Exception as error:
+                    log_error(self.log_message(f"Unknown error: {error}"))
+                    await asyncio.sleep(delay=random.randint(60, 120))
 
-            else:
-                logger.info(f"{self.session_name} | Sleep <y>{round(sleep_time / 60, 1)}</y> min")
-                await asyncio.sleep(delay=sleep_time)
+                else:
+                    logger.info(f"{self.session_name} | Sleep <y>{round(sleep_time / 60, 1)}</y> min")
+                    await asyncio.sleep(delay=sleep_time)
 
 
 async def run_tapper(tg_client: TelegramClient):
