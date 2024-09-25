@@ -20,7 +20,7 @@ from telethon.functions import messages, contacts, channels, account
 from .agents import generate_random_user_agent
 from .headers import *
 from bot.config import settings
-from bot.utils import logger, log_error, proxy_utils, config_utils, CONFIG_PATH, SESSIONS_PATH
+from bot.utils import logger, log_error, proxy_utils, config_utils, CONFIG_PATH
 from bot.utils.transaction import TRANSACTION_METHODS
 from bot.exceptions import InvalidSession
 
@@ -34,7 +34,7 @@ class Tapper:
         self.tg_id = ''
         self.config = config_utils.get_session_config(self.session_name, CONFIG_PATH)
         self.proxy = self.config.get('proxy', None)
-        self.lock = fasteners.InterProcessLock(os.path.join(SESSIONS_PATH, f"{self.session_name}.lock"))
+        self.lock = fasteners.InterProcessLock(os.path.join(os.path.dirname(CONFIG_PATH), 'lock_files',  f"{self.session_name}.lock"))
         self.headers = headers
         self.headers['User-Agent'] = self.check_user_agent()
         self.headers.update(**get_sec_ch_ua(self.headers.get('User-Agent', '')))
