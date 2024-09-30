@@ -165,7 +165,10 @@ class Tapper:
             await asyncio.sleep(delay=random.randint(3, 7))
 
     async def check_proxy(self, http_client: aiohttp.ClientSession) -> bool:
-        proxy_conn = http_client._connector
+        proxy_conn = http_client.connector
+        if proxy_conn and not hasattr(proxy_conn, '_proxy_host'):
+            logger.info(self.log_message(f"Running Proxy-less"))
+            return True
         try:
             response = await http_client.get(url='https://ifconfig.me/ip', timeout=aiohttp.ClientTimeout(15))
             logger.info(self.log_message(f"Proxy IP: {await response.text()}"))
