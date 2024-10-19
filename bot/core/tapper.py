@@ -1,34 +1,30 @@
-from typing import Any
-
 import aiohttp
 import asyncio
+import json
 import os
-import random
-from urllib.parse import unquote
+import re
+from urllib.parse import unquote, parse_qs
 from aiocfscrape import CloudflareScraper
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
 from datetime import datetime, timedelta
+from random import uniform, randint
 from time import time
+from typing import Any
 
-from opentele.tl import TelegramClient
-from telethon.errors import *
-from telethon.types import InputBotAppShortName, InputNotifyPeer, InputPeerNotifySettings, InputUser
-from telethon.functions import messages, channels, account
+from bot.utils.universal_telegram_client import UniversalTelegramClient
 
 from .headers import *
 from bot.config import settings
-from bot.utils import logger, log_error, proxy_utils, config_utils, AsyncInterProcessLock, CONFIG_PATH
+from bot.utils import logger, log_error, config_utils, CONFIG_PATH, first_run
 from bot.utils.transaction import TRANSACTION_METHODS
 from bot.exceptions import InvalidSession
 
 
 class Tapper:
-    def __init__(self, tg_client: TelegramClient):
-        self.session_name, _ = os.path.splitext(os.path.basename(tg_client.session.filename))
+    def __init__(self, tg_client: UniversalTelegramClient):
         self.tg_client = tg_client
-        self.lock = AsyncInterProcessLock(os.path.join(os.path.dirname(CONFIG_PATH), 'lock_files',  f"{self.session_name}.lock"))
-        self.headers = headers
+        self.session_name = tg_client.session_name
 
         session_config = config_utils.get_session_config(self.session_name, CONFIG_PATH)
 
@@ -36,6 +32,7 @@ class Tapper:
             logger.critical(self.log_message('CHECK accounts_config.json as it might be corrupted'))
             exit(-1)
 
+        self.headers = headers
         user_agent = session_config.get('user_agent')
         self.headers['user-agent'] = user_agent
         self.headers.update(**get_sec_ch_ua(user_agent))
@@ -43,88 +40,41 @@ class Tapper:
         self.proxy = session_config.get('proxy')
         if self.proxy:
             proxy = Proxy.from_str(self.proxy)
-            proxy_dict = proxy_utils.to_telethon_proxy(proxy)
-            self.tg_client.set_proxy(proxy_dict)
+            self.tg_client.set_proxy(proxy)
 
         self.auth_data = ''
         self.hash = ''
-        self.tg_id = ''
+        self.user_data = None
+        self.tg_client_id = None
 
         self._webview_data = None
 
     def log_message(self, message) -> str:
         return f"<ly>{self.session_name}</ly> | {message}"
 
-    async def initialize_webview_data(self):
-        if not self._webview_data:
-            while True:
-                try:
-                    peer = await self.tg_client.get_input_entity('boolfamily_Bot')
-                    bot_id = InputUser(user_id=peer.user_id, access_hash=peer.access_hash)
-                    input_bot_app = InputBotAppShortName(bot_id=bot_id, short_name="join")
-                    self._webview_data = {'peer': peer, 'app': input_bot_app}
-                    break
-                except FloodWaitError as fl:
-                    logger.warning(self.log_message(f"FloodWait {fl}. Waiting {fl.seconds}s"))
-                    await asyncio.sleep(fl.seconds + 3)
-                except (UnauthorizedError, AuthKeyUnregisteredError):
-                    raise InvalidSession(f"{self.session_name}: User is unauthorized")
-                except (UserDeactivatedError, UserDeactivatedBanError, PhoneNumberBannedError):
-                    raise InvalidSession(f"{self.session_name}: User is banned")
+    async def get_tg_web_data(self) -> str:
+        webview_url = await self.tg_client.get_app_webview_url('boolfamily_Bot', "join", "8T1K2")
 
-    async def get_tg_web_data(self) -> [str | None]:
-        if self.proxy and not self.tg_client._proxy:
-            logger.critical(self.log_message('Proxy found, but not passed to TelegramClient'))
-            exit(-1)
+        tg_web_data = unquote(unquote(webview_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
+        self.user_data = json.loads(parse_qs(tg_web_data).get('user', [''])[0])
 
-        tg_web_data = None
-        async with self.lock:
-            try:
-                if not self.tg_client.is_connected():
-                    await self.tg_client.connect()
-                await self.initialize_webview_data()
-                await asyncio.sleep(random.uniform(1, 2))
+        self.tg_client_id = self.user_data.get('id')
 
-                ref_id = settings.REF_ID if random.randint(0, 100) <= 85 else "8T1K2"
+        user_data = re.findall(r'user=([^&]+)', tg_web_data)[0]
+        chat_instance = re.findall(r'chat_instance=([^&]+)', tg_web_data)[0]
+        chat_type = re.findall(r'chat_type=([^&]+)', tg_web_data)[0]
+        ref = re.findall(r'start_param=([^&]+)', tg_web_data)
+        start_param = '\nstart_param=' + re.findall(r'start_param=([^&]+)', tg_web_data)[0] if ref else ""
+        auth_date = re.findall(r'auth_date=([^&]+)', tg_web_data)[0]
+        hash_value = re.findall(r'hash=([^&]+)', tg_web_data)[0]
 
-                web_view = await self.tg_client(messages.RequestAppWebViewRequest(
-                    **self._webview_data,
-                    platform='android',
-                    write_allowed=True,
-                    start_param=ref_id
-                ))
-
-                auth_url = web_view.url
-                tg_web_data = unquote(
-                    string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
-
-                user_data = re.findall(r'user=([^&]+)', tg_web_data)[0]
-                chat_instance = re.findall(r'chat_instance=([^&]+)', tg_web_data)[0]
-                chat_type = re.findall(r'chat_type=([^&]+)', tg_web_data)[0]
-                start_param = '\nstart_param=' + re.findall(r'start_param=([^&]+)', tg_web_data)[0]
-                auth_date = re.findall(r'auth_date=([^&]+)', tg_web_data)[0]
-                hash_value = re.findall(r'hash=([^&]+)', tg_web_data)[0]
-
-                user = user_data.replace('"', '\"')
-                self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}{start_param}\nuser={user}"
-                self.hash = hash_value
-                self.tg_id = user.split('"id":')[1].split(',')[0]
-
-            except InvalidSession:
-                raise
-
-            except Exception as error:
-                log_error(self.log_message(f"Unknown error during Authorization: {type(error).__name__}"))
-                await asyncio.sleep(delay=3)
-
-            finally:
-                if self.tg_client.is_connected():
-                    await self.tg_client.disconnect()
-                    await asyncio.sleep(15)
+        user = user_data.replace('"', '\"')
+        self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}{start_param}\nuser={user}"
+        self.hash = hash_value
 
         return tg_web_data
 
-    async def get_strict_data(self, http_client: aiohttp.ClientSession):
+    async def get_strict_data(self, http_client: CloudflareScraper):
         try:
             json_data = {
                 "data": self.auth_data,
@@ -136,14 +86,14 @@ class Tapper:
 
             response_json = await response.json()
             await http_client.get(
-                f'https://miniapp.bool.network/backend/bool-tg-interface/user/check?tgId={self.tg_id}')
+                f'https://miniapp.bool.network/backend/bool-tg-interface/user/check?tgId={self.tg_client_id}')
             return response_json['data']
 
         except Exception as error:
             log_error(self.log_message(f"Unknown error when getting user strict data: {error}"))
-            await asyncio.sleep(delay=random.randint(3, 7))
+            await asyncio.sleep(delay=randint(3, 7))
 
-    async def register_user(self, http_client: aiohttp.ClientSession):
+    async def register_user(self, http_client: CloudflareScraper):
         try:
             json_data = {
                 "data": self.auth_data,
@@ -162,9 +112,9 @@ class Tapper:
 
         except Exception as error:
             log_error(self.log_message(f"Unknown error during registration: {error}"))
-            await asyncio.sleep(delay=random.randint(3, 7))
+            await asyncio.sleep(delay=randint(3, 7))
 
-    async def check_proxy(self, http_client: aiohttp.ClientSession) -> bool:
+    async def check_proxy(self, http_client: CloudflareScraper) -> bool:
         proxy_conn = http_client.connector
         if proxy_conn and not hasattr(proxy_conn, '_proxy_host'):
             logger.info(self.log_message(f"Running Proxy-less"))
@@ -178,7 +128,7 @@ class Tapper:
             log_error(self.log_message(f"Proxy: {proxy_url} | Error: {type(error).__name__}"))
             return False
 
-    async def do_task(self, http_client: aiohttp.ClientSession, task_name: str, task_id: int):
+    async def do_task(self, http_client: CloudflareScraper, task_name: str, task_id: int):
         try:
             logger.info(self.log_message(f"Performing task <lc>{task_name}</lc>..."))
 
@@ -198,7 +148,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when processing task: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def get_user_staking(self, http_client: aiohttp.ClientSession, wallet_address: str) -> dict:
+    async def get_user_staking(self, http_client: CloudflareScraper, wallet_address: str) -> dict:
         try:
             payload = {
                 'ownerAddress': wallet_address,
@@ -217,7 +167,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when getting user staking: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def get_staking_record(self, http_client: aiohttp.ClientSession, page: int) -> dict | None:
+    async def get_staking_record(self, http_client: CloudflareScraper, page: int) -> dict | None:
         try:
             response = await http_client.get(
                 f'https://miniapp.bool.network/backend/bool-tg-interface/user/vote:devices?'
@@ -240,7 +190,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when getting records: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def verify_account(self, http_client: aiohttp.ClientSession):
+    async def verify_account(self, http_client: CloudflareScraper):
         try:
             json_data = {
                 "data": self.auth_data,
@@ -260,7 +210,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when verifying account: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def make_staking(self, http_client: aiohttp.ClientSession, device_id: str, amount: int):
+    async def make_staking(self, http_client: CloudflareScraper, device_id: str, amount: int):
         try:
             json_data = {
                 "deviceId": [device_id],
@@ -282,7 +232,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when staking: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def get_staking_balance(self, http_client: aiohttp.ClientSession, wallet_address: str):
+    async def get_staking_balance(self, http_client: CloudflareScraper, wallet_address: str):
         try:
 
             chain_id = TRANSACTION_METHODS['eth_chainId']
@@ -303,7 +253,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when getting staking balance: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def send_transaction_data(self, http_client: aiohttp.ClientSession, json_data: Any):
+    async def send_transaction_data(self, http_client: CloudflareScraper, json_data: Any):
         try:
             response = await http_client.post('https://betatest-rpc-node-http.bool.network/',
                                               json=json_data)
@@ -314,7 +264,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when sending transaction data: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def performing_transaction(self, http_client: aiohttp.ClientSession, data: str, wallet_address: str):
+    async def performing_transaction(self, http_client: CloudflareScraper, data: str, wallet_address: str):
         try:
             chain_id = TRANSACTION_METHODS['eth_chainId']
             get_block_number = TRANSACTION_METHODS['eth_blockNumber']
@@ -386,42 +336,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when performing transaction: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def join_and_mute_tg_channel(self, link: str):
-        path = link.replace("https://t.me/", "")
-        if path == 'money':
-            return
-
-        async with self.lock:
-            async with self.tg_client as client:
-                try:
-                    if path.startswith('+'):
-                        invite_hash = path[1:]
-                        result = await client(messages.ImportChatInviteRequest(hash=invite_hash))
-                        channel_title = result.chats[0].title
-                        entity = result.chats[0]
-                    else:
-                        entity = await client.get_entity(f'@{path}')
-                        await client(channels.JoinChannelRequest(channel=entity))
-                        channel_title = entity.title
-
-                    await asyncio.sleep(1)
-
-                    await client(account.UpdateNotifySettingsRequest(
-                        peer=InputNotifyPeer(entity),
-                        settings=InputPeerNotifySettings(
-                            show_previews=False,
-                            silent=True,
-                            mute_until=datetime.today() + timedelta(days=365)
-                        )
-                    ))
-
-                    logger.info(self.log_message(f"Subscribed to channel: <y>{channel_title}</y>"))
-                except Exception as e:
-                    log_error(self.log_message(f"(Task) Error while subscribing to tg channel: {e}"))
-
-            await asyncio.sleep(random.uniform(15, 20))
-
-    async def check_daily_reward(self, http_client: aiohttp.ClientSession):
+    async def check_daily_reward(self, http_client: CloudflareScraper):
         try:
             json_data = {
                 "data": self.auth_data,
@@ -449,7 +364,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when processing daily reward: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def processing_tasks(self, http_client: aiohttp.ClientSession):
+    async def processing_tasks(self, http_client: CloudflareScraper):
         try:
             json_data = {
                 "data": self.auth_data,
@@ -463,7 +378,7 @@ class Tapper:
             tasks = response_json['data']
             for task in tasks:
                 if not task['done'] and task['assignmentId'] != 48 and task['project'] != 'daily':
-                    await asyncio.sleep(delay=random.randint(5, 15))
+                    await asyncio.sleep(delay=randint(5, 15))
                     status = await self.do_task(http_client, task['title'], int(task['assignmentId']))
                     if status:
                         logger.success(self.log_message(f"Task <lc>{task['title']}</lc> - Completed | "
@@ -475,7 +390,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when processing tasks: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def check_user_subscription(self, http_client: aiohttp.ClientSession):
+    async def check_user_subscription(self, http_client: CloudflareScraper):
         try:
             json_data = {
                 "data": self.auth_data,
@@ -494,14 +409,14 @@ class Tapper:
             await asyncio.sleep(delay=3)
 
     async def run(self) -> None:
-        random_delay = random.uniform(1, settings.RANDOM_DELAY_IN_RUN)
+        random_delay = uniform(1, settings.RANDOM_DELAY_IN_RUN)
         logger.info(self.log_message(f"Bot will start in <ly>{int(random_delay)}s</ly>"))
         await asyncio.sleep(random_delay)
 
         access_token_created_time = 0
         tg_web_data = None
 
-        token_live_time = random.randint(3500, 3600)
+        token_live_time = randint(3500, 3600)
 
         proxy_conn = {'connector': ProxyConnector.from_url(self.proxy)} if self.proxy else {}
         async with CloudflareScraper(headers=self.headers, timeout=aiohttp.ClientTimeout(60), **proxy_conn) as http_client:
@@ -511,7 +426,7 @@ class Tapper:
                     await asyncio.sleep(300)
                     continue
                 try:
-                    sleep_time = random.randint(settings.SLEEP_TIME[0], settings.SLEEP_TIME[1])
+                    sleep_time = randint(settings.SLEEP_TIME[0], settings.SLEEP_TIME[1])
                     if time() - access_token_created_time >= token_live_time:
                         tg_web_data = await self.get_tg_web_data()
 
@@ -521,14 +436,17 @@ class Tapper:
                             continue
 
                         access_token_created_time = time()
-                        token_live_time = random.randint(3500, 3600)
+                        token_live_time = randint(3500, 3600)
 
                         strict_data = await self.get_strict_data(http_client=http_client)
                         if strict_data is None:
-                            await asyncio.sleep(delay=random.randint(1, 3))
+                            await asyncio.sleep(delay=randint(1, 3))
                             user_id = await self.register_user(http_client=http_client)
                             if user_id is not None:
                                 strict_data = await self.get_strict_data(http_client=http_client)
+
+                        if self.tg_client.is_fist_run:
+                            await first_run.append_recurring_session(self.session_name)
 
                         balance = strict_data['rewardValue']
                         rank = strict_data['rank']
@@ -538,11 +456,11 @@ class Tapper:
                         await self.check_daily_reward(http_client=http_client)
 
                         if settings.AUTO_TASK:
-                            await asyncio.sleep(delay=random.randint(3, 5))
+                            await asyncio.sleep(delay=randint(3, 5))
                             await self.processing_tasks(http_client=http_client)
 
                         if settings.STAKING:
-                            await asyncio.sleep(delay=random.randint(3, 5))
+                            await asyncio.sleep(delay=randint(3, 5))
                             balance = await self.get_staking_balance(http_client=http_client,
                                                                      wallet_address=strict_data['evmAddress'])
                             user_staking = await self.get_user_staking(http_client=http_client,
@@ -556,11 +474,11 @@ class Tapper:
                                         apy = round(record['yield'] * 100, 2)
                                         logger.info(self.log_message(
                                             f'Staking record found | APY: <lc>{apy}%</lc> | Voters: <y>{voters}</y>'))
-                                        await asyncio.sleep(delay=random.randint(3, 5))
+                                        await asyncio.sleep(delay=randint(3, 5))
                                         data = await self.make_staking(http_client=http_client,
                                                                        device_id=record['deviceID'], amount=balance)
                                         if data is not None:
-                                            await asyncio.sleep(delay=random.randint(3, 5))
+                                            await asyncio.sleep(delay=randint(3, 5))
                                             result = await self.performing_transaction(http_client=http_client,
                                                                                        data=data,
                                                                                        wallet_address=strict_data[
@@ -570,10 +488,10 @@ class Tapper:
                                                     f"Successfully staked <e>{balance}</e> tBOL"))
 
                             elif not strict_data['isVerify']:
-                                await asyncio.sleep(delay=random.randint(3, 10))
+                                await asyncio.sleep(delay=randint(3, 10))
                                 subscribed = await self.check_user_subscription(http_client=http_client)
                                 if not subscribed:
-                                    await self.join_and_mute_tg_channel('https://t.me/boolofficial')
+                                    await self.tg_client.join_and_mute_tg_channel('https://t.me/boolofficial')
                                 else:
                                     await self.verify_account(http_client=http_client)
 
@@ -582,14 +500,14 @@ class Tapper:
 
                 except Exception as error:
                     log_error(self.log_message(f"Unknown error: {error}"))
-                    await asyncio.sleep(delay=random.randint(60, 120))
+                    await asyncio.sleep(delay=randint(60, 120))
 
                 else:
                     logger.info(f"{self.session_name} | Sleep <y>{round(sleep_time / 60, 1)}</y> min")
                     await asyncio.sleep(delay=sleep_time)
 
 
-async def run_tapper(tg_client: TelegramClient):
+async def run_tapper(tg_client: UniversalTelegramClient):
     runner = Tapper(tg_client=tg_client)
     try:
         await runner.run()

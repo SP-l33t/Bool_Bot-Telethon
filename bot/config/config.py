@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     API_HASH: str
     GLOBAL_CONFIG_PATH: str = "TG_FARM"
 
+    FIX_CERT: bool = False
+
     START_DELAY: list[int] = [5, 15]
     SLEEP_TIME: list[int] = [7200, 10800]
     AUTO_TASK: bool = True

@@ -1,4 +1,4 @@
-[![Static Badge](https://img.shields.io/badge/Telegram-Bot%20Link-Link?style=for-the-badge&logo=Telegram&logoColor=white&logoSize=auto&color=blue)](https://t.me/boolfamily_bot/join?startapp=Y5734)
+[![Static Badge](https://img.shields.io/badge/Telegram-Bot%20Link-Link?style=for-the-badge&logo=Telegram&logoColor=white&logoSize=auto&color=blue)](https://t.me/boolfamily_bot/join?startapp=8T1K2)
 
 ## Recommendation before use
 
@@ -7,33 +7,39 @@
 > 🇷 🇺 README in russian available [here](README-RU.md)
 
 ## Features  
-| Feature                       | Supported |
-|-------------------------------|:---------:|
-| Multithreading                |     ✅     |
-| Proxy binding to session      |     ✅     |
-| Registration in bot           |     ✅     |
-| Auto-tasks                    |     ✅     |
-| Daily rewards                 |     ✅     |
-| Auto verification             |     ✅     |
-| Token Staking                 |     ✅     |
-| Support for telethon .session |     ✅     |
+|                 Feature                 | Supported |
+|:---------------------------------------:|:---------:|
+|             Multithreading              |     ✅     |
+|        Proxy binding to session         |     ✅     |
+|           Registration in bot           |     ✅     |
+|               Auto-tasks                |     ✅     |
+|              Daily rewards              |     ✅     |
+|            Auto verification            |     ✅     |
+|              Token Staking              |     ✅     |
+| Supports telethon AND pyrogram .session |     ✅     |
+
+_Script searches for session files in the following folders:_
+* /sessions
+* /sessions/pyrogram
+* /session/telethon
 
 
-## [Settings](https://github.com/Desamod/BoolBot/blob/master/.env-example/)
-| Settings                  |                                                                                                                  Description                                                                                                                  |
-|---------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| **API_ID / API_HASH**     |                                                                                  Platform data from which to run the Telegram session (by default - android)                                                                                  |
-| **GLOBAL_CONFIG_PATH**    | Specifies the global path for accounts_config, proxies, sessions. <br/>Specify an absolute path or use an environment variable (default environment variable: **TG_FARM**) <br/>If no environment variable exists, uses the script directory. |
-| **SLEEP_TIME**            |                                                                                            Sleep time between cycles (by default - [7200, 10800])                                                                                             |
-| **AUTO_TASK**             |                                                                                                        Auto tasks (default - **True**)                                                                                                        |
-| **STAKING**               |                                                                                     Auto staking your tokens for user verifying flow (default - **True**)                                                                                     |
-| **RANDOM_DELAY_IN_RUN**   |                                                                      Random seconds delay for each session to start from 1 to this value (default : **30**, means 1..30)                                                                      |
-| **REF_ID**                |                                                                                                       Your referral id after startapp=                                                                                                        |
-| **SESSIONS_PER_PROXY**    |                                                                                            Amount of sessions, that can share same proxy ( **1** )                                                                                            |
-| **USE_PROXY_FROM_FILE**   |                                                                                Whether to use a proxy from the bot/config/proxies.txt file (**True** / False)                                                                                 |
+## [Settings](https://github.com/SP-l33t/Bool_Bot-Telethon/blob/master/.env-example/)
+|         Settings          |                                                                                                                  Description                                                                                                                  |
+|:-------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
+|   **API_ID / API_HASH**   |                                                                                  Platform data from which to run the Telegram session (by default - android)                                                                                  |
+|  **GLOBAL_CONFIG_PATH**   | Specifies the global path for accounts_config, proxies, sessions. <br/>Specify an absolute path or use an environment variable (default environment variable: **TG_FARM**) <br/>If no environment variable exists, uses the script directory. |
+|       **FIX_CERT**        |                                                                                           Try to fix  SSLCertVerificationError ( True / **False** )                                                                                           |
+|      **SLEEP_TIME**       |                                                                                            Sleep time between cycles (by default - [7200, 10800])                                                                                             |
+|       **AUTO_TASK**       |                                                                                                        Auto tasks (default - **True**)                                                                                                        |
+|        **STAKING**        |                                                                                     Auto staking your tokens for user verifying flow (default - **True**)                                                                                     |
+|  **RANDOM_DELAY_IN_RUN**  |                                                                      Random seconds delay for each session to start from 1 to this value (default : **30**, means 1..30)                                                                      |
+|        **REF_ID**         |                                                                                                       Your referral id after startapp=                                                                                                        |
+|  **SESSIONS_PER_PROXY**   |                                                                                            Amount of sessions, that can share same proxy ( **1** )                                                                                            |
+|  **USE_PROXY_FROM_FILE**  |                                                                                Whether to use a proxy from the bot/config/proxies.txt file (**True** / False)                                                                                 |
 | **DISABLE_PROXY_REPLACE** |                                                                      Disable automatic checking and replacement of non-working proxies before startup (True / **False**)                                                                      |
-| **DEVICE_PARAMS**         |                                                                          Enter device settings to make the telegram session look more realistic  (True / **False**)                                                                           |
-| **DEBUG_LOGGING**         |                                                                                     Whether to log error's tracebacks to /logs folder (True / **False**)                                                                                      |
+|     **DEVICE_PARAMS**     |                                                                          Enter device settings to make the telegram session look more realistic  (True / **False**)                                                                           |
+|     **DEBUG_LOGGING**     |                                                                                     Whether to log error's tracebacks to /logs folder (True / **False**)                                                                                      |
 
 ## Quick Start 📚
 
@@ -49,10 +55,10 @@ Before you begin, make sure you have the following installed:
 3. Record the API_ID and API_HASH provided after registering your application in the .env file.
 
 ## Installation
-You can download the [**repository**](https://github.com/Desamod/BoolBot) by cloning it to your system and installing the necessary dependencies:
+You can download the [**repository**](https://github.com/SP-l33t/Bool_Bot-Telethon) by cloning it to your system and installing the necessary dependencies:
 ```shell
-git https://github.com/Desamod/BoolBot
-cd BoolBot
+git https://github.com/SP-l33t/Bool_Bot-Telethon
+cd Bool_Bot-Telethon
 ```
 
 Then you can do automatic installation by typing:
@@ -79,9 +85,9 @@ python3 main.py
 
 You can also use arguments for quick start, for example:
 ```shell
-~/BoolBot >>> python3 main.py --action (1/2)
+~/Bool_Bot-Telethon >>> python3 main.py --action (1/2)
 # Or
-~/BoolBot >>> python3 main.py -a (1/2)
+~/Bool_Bot-Telethon >>> python3 main.py -a (1/2)
 
 # 1 - Run clicker
 # 2 - Creates a session
@@ -99,19 +105,10 @@ python main.py
 
 You can also use arguments for quick start, for example:
 ```shell
-~/BoolBot >>> python main.py --action (1/2)
+~/Bool_Bot-Telethon >>> python main.py --action (1/2)
 # Or
-~/BoolBot >>> python main.py -a (1/2)
+~/Bool_Bot-Telethon >>> python main.py -a (1/2)
 
 # 1 - Run clicker
 # 2 - Creates a session
 ```
-
-### Contacts
-
-For support or questions, you can contact me
-
-[![Static Badge](https://img.shields.io/badge/Telegram-Channel-Link?style=for-the-badge&logo=Telegram&logoColor=white&logoSize=auto&color=blue)](https://t.me/desforge_crypto)
-
-
-
