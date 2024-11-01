@@ -1,14 +1,11 @@
 import aiohttp
 import asyncio
 import json
-import os
-import re
 from urllib.parse import unquote, parse_qs
 from aiocfscrape import CloudflareScraper
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
-from datetime import datetime, timedelta
-from random import uniform, randint
+from random import uniform, randint, shuffle
 from time import time
 from typing import Any
 
@@ -343,7 +340,7 @@ class Tapper:
                 "hash": self.hash
             }
             response = await http_client.post(
-                f'https://miniapp.bool.network/backend/bool-tg-interface/assignment/daily/list',
+                f'https://bot-api.bool.network/bool-tg-interface/assignment/daily/list',
                 json=json_data)
             response.raise_for_status()
             response_json = await response.json()
@@ -354,11 +351,12 @@ class Tapper:
                     # await self.join_tg_channel(daily_task['url'])
                     json_data['assignmentId'] = daily_task['assignmentId']
                     response = await http_client.post(
-                        f'https://miniapp.bool.network/backend/bool-tg-interface/assignment/daily/do',
+                        f'https://bot-api.bool.network/bool-tg-interface/assignment/daily/do',
                         json=json_data)
                     response.raise_for_status()
-                    logger.success(self.log_message(f"Daily claimed | Reward: <e>{daily_task['reward']}</e> tBOL | "
-                                                    f"Day count: <e>{daily_task['signDay'] + 1}</e>"))
+                    if (await response.json()).get('message') == "success":
+                        logger.success(self.log_message(f"Daily claimed | Reward: <e>{daily_task['reward']}</e> tBOL | "
+                                                        f"Day count: <e>{daily_task['signDay'] + 1}</e>"))
 
         except Exception as error:
             log_error(self.log_message(f"Unknown error when processing daily reward: {error}"))
@@ -376,9 +374,20 @@ class Tapper:
             response_json = await response.json()
 
             tasks = response_json['data']
+            shuffle(tasks)
+            subs_amount = 0
             for task in tasks:
-                if not task['done'] and task['assignmentId'] != 48 and task['project'] != 'daily':
-                    await asyncio.sleep(delay=randint(5, 15))
+                if not task['done']:
+                    task_url = task.get('url', "")
+                    if "t.me/boost" in task_url or "daily check-in" in task.get('title', "").lower():
+                        continue
+                    await asyncio.sleep(uniform(5, 15))
+                    is_subscribe_task = "https://t.me/+" in task_url
+                    if is_subscribe_task and subs_amount < settings.SUBSCRIPTIONS_PER_CYCLE:
+                        await self.tg_client.join_and_mute_tg_channel(task_url.replace("\n", ""))
+                        subs_amount += 1
+                    elif is_subscribe_task:
+                        continue
                     status = await self.do_task(http_client, task['title'], int(task['assignmentId']))
                     if status:
                         logger.success(self.log_message(f"Task <lc>{task['title']}</lc> - Completed | "
@@ -409,7 +418,7 @@ class Tapper:
             await asyncio.sleep(delay=3)
 
     async def run(self) -> None:
-        random_delay = uniform(1, settings.RANDOM_DELAY_IN_RUN)
+        random_delay = uniform(1, settings.SESSION_START_DELAY)
         logger.info(self.log_message(f"Bot will start in <ly>{int(random_delay)}s</ly>"))
         await asyncio.sleep(random_delay)
 

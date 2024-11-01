@@ -10,10 +10,12 @@ class Settings(BaseSettings):
 
     FIX_CERT: bool = False
 
-    START_DELAY: list[int] = [5, 15]
+    TRACK_BOT_UPDATES: bool = True
+
+    SESSION_START_DELAY: int = 360
     SLEEP_TIME: list[int] = [7200, 10800]
     AUTO_TASK: bool = True
-    RANDOM_DELAY_IN_RUN: int = 30
+    SUBSCRIPTIONS_PER_CYCLE: int = 0
     REF_ID: str = '8T1K2'
     STAKING: bool = True
     MIN_STAKING_BALANCE: float = 200.0
