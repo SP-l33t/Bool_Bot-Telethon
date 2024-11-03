@@ -5,7 +5,7 @@ from urllib.parse import unquote, parse_qs
 from aiocfscrape import CloudflareScraper
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
-from random import uniform, randint, shuffle
+from random import uniform, shuffle
 from time import time
 from typing import Any
 
@@ -88,7 +88,7 @@ class Tapper:
 
         except Exception as error:
             log_error(self.log_message(f"Unknown error when getting user strict data: {error}"))
-            await asyncio.sleep(delay=randint(3, 7))
+            await asyncio.sleep(uniform(3, 7))
 
     async def register_user(self, http_client: CloudflareScraper):
         try:
@@ -109,7 +109,7 @@ class Tapper:
 
         except Exception as error:
             log_error(self.log_message(f"Unknown error during registration: {error}"))
-            await asyncio.sleep(delay=randint(3, 7))
+            await asyncio.sleep(uniform(3, 7))
 
     async def check_proxy(self, http_client: CloudflareScraper) -> bool:
         proxy_conn = http_client.connector
@@ -425,7 +425,7 @@ class Tapper:
         access_token_created_time = 0
         tg_web_data = None
 
-        token_live_time = randint(3500, 3600)
+        token_live_time = uniform(3500, 3600)
 
         proxy_conn = {'connector': ProxyConnector.from_url(self.proxy)} if self.proxy else {}
         async with CloudflareScraper(headers=self.headers, timeout=aiohttp.ClientTimeout(60), **proxy_conn) as http_client:
@@ -435,7 +435,7 @@ class Tapper:
                     await asyncio.sleep(300)
                     continue
                 try:
-                    sleep_time = randint(settings.SLEEP_TIME[0], settings.SLEEP_TIME[1])
+                    sleep_time = uniform(settings.SLEEP_TIME[0], settings.SLEEP_TIME[1])
                     if time() - access_token_created_time >= token_live_time:
                         tg_web_data = await self.get_tg_web_data()
 
@@ -445,11 +445,11 @@ class Tapper:
                             continue
 
                         access_token_created_time = time()
-                        token_live_time = randint(3500, 3600)
+                        token_live_time = uniform(3500, 3600)
 
                         strict_data = await self.get_strict_data(http_client=http_client)
                         if strict_data is None:
-                            await asyncio.sleep(delay=randint(1, 3))
+                            await asyncio.sleep(delay=uniform(1, 3))
                             user_id = await self.register_user(http_client=http_client)
                             if user_id is not None:
                                 strict_data = await self.get_strict_data(http_client=http_client)
@@ -459,17 +459,19 @@ class Tapper:
 
                         balance = strict_data['rewardValue']
                         rank = strict_data['rank']
+                        is_verified = strict_data.get('isVerify', False)
                         logger.info(self.log_message(f"Balance: <e>{balance}</e> tBOL | "
-                                                     f"Rank: <fg #ffbcd9>{rank}</fg #ffbcd9>"))
+                                                     f"Rank: <fg #ffbcd9>{rank}</fg #ffbcd9> | "
+                                                     f"Boolean : <ly>{is_verified}</ly>"))
 
                         await self.check_daily_reward(http_client=http_client)
 
                         if settings.AUTO_TASK:
-                            await asyncio.sleep(delay=randint(3, 5))
+                            await asyncio.sleep(uniform(3, 5))
                             await self.processing_tasks(http_client=http_client)
 
                         if settings.STAKING:
-                            await asyncio.sleep(delay=randint(3, 5))
+                            await asyncio.sleep(uniform(3, 5))
                             balance = await self.get_staking_balance(http_client=http_client,
                                                                      wallet_address=strict_data['evmAddress'])
                             user_staking = await self.get_user_staking(http_client=http_client,
@@ -483,11 +485,11 @@ class Tapper:
                                         apy = round(record['yield'] * 100, 2)
                                         logger.info(self.log_message(
                                             f'Staking record found | APY: <lc>{apy}%</lc> | Voters: <y>{voters}</y>'))
-                                        await asyncio.sleep(delay=randint(3, 5))
+                                        await asyncio.sleep(uniform(3, 5))
                                         data = await self.make_staking(http_client=http_client,
                                                                        device_id=record['deviceID'], amount=balance)
                                         if data is not None:
-                                            await asyncio.sleep(delay=randint(3, 5))
+                                            await asyncio.sleep(uniform(3, 5))
                                             result = await self.performing_transaction(http_client=http_client,
                                                                                        data=data,
                                                                                        wallet_address=strict_data[
@@ -497,7 +499,7 @@ class Tapper:
                                                     f"Successfully staked <e>{balance}</e> tBOL"))
 
                             elif not strict_data['isVerify']:
-                                await asyncio.sleep(delay=randint(3, 10))
+                                await asyncio.sleep(uniform(3, 10))
                                 subscribed = await self.check_user_subscription(http_client=http_client)
                                 if not subscribed:
                                     await self.tg_client.join_and_mute_tg_channel('https://t.me/boolofficial')
@@ -508,8 +510,9 @@ class Tapper:
                     raise error
 
                 except Exception as error:
-                    log_error(self.log_message(f"Unknown error: {error}"))
-                    await asyncio.sleep(delay=randint(60, 120))
+                    sleep_time = uniform(60, 120)
+                    log_error(self.log_message(f"Unknown error: {error}. Sleep for {int(sleep_time)} seconds"))
+                    await asyncio.sleep(sleep_time)
 
                 else:
                     logger.info(f"{self.session_name} | Sleep <y>{round(sleep_time / 60, 1)}</y> min")
