@@ -229,7 +229,7 @@ class Tapper:
             log_error(self.log_message(f"Unknown error when staking: {error}"))
             await asyncio.sleep(delay=3)
 
-    async def get_staking_balance(self, http_client: CloudflareScraper, wallet_address: str):
+    async def get_non_staked_balance(self, http_client: CloudflareScraper, wallet_address: str):
         try:
 
             chain_id = TRANSACTION_METHODS['eth_chainId']
@@ -470,41 +470,49 @@ class Tapper:
                             await asyncio.sleep(uniform(3, 5))
                             await self.processing_tasks(http_client=http_client)
 
-                        if settings.STAKING:
-                            await asyncio.sleep(uniform(3, 5))
-                            balance = await self.get_staking_balance(http_client=http_client,
-                                                                     wallet_address=strict_data['evmAddress'])
+                        await asyncio.sleep(uniform(3, 5))
+                        balance = await self.get_non_staked_balance(http_client=http_client,
+                                                                    wallet_address=strict_data['evmAddress'])
+                        user_staking = await self.get_user_staking(http_client=http_client,
+                                                                   wallet_address=strict_data['evmAddress'])
+                        staking_balance = 0
+                        for record in user_staking:
+                            staking_balance += int(int(record['currentStake']) / 1e18)
+                        logger.info(self.log_message(f'Balance in stake: <e>{staking_balance}</e> tBOL | '
+                                    f'Unused balance: <fg #FFA500>{balance}</fg #FFA500> tBOL'))
+
+                        if settings.STAKING and balance >= settings.MIN_STAKING_BALANCE:
                             user_staking = await self.get_user_staking(http_client=http_client,
                                                                        wallet_address=strict_data['evmAddress'])
 
-                            if user_staking is None or len(user_staking) == 0 and not strict_data['isVerify']:
-                                if balance > settings.MIN_STAKING_BALANCE:
-                                    record = await self.get_staking_record(http_client=http_client, page=1)
-                                    if record is not None:
-                                        voters = record['voterCount']
-                                        apy = round(record['yield'] * 100, 2)
-                                        logger.info(self.log_message(
-                                            f'Staking record found | APY: <lc>{apy}%</lc> | Voters: <y>{voters}</y>'))
+                            if (user_staking is None or len(user_staking) == 0 and not strict_data['isVerify']) or \
+                                    strict_data['isVerify']:
+                                record = await self.get_staking_record(http_client=http_client, page=1)
+                                if record is not None:
+                                    voters = record['voterCount']
+                                    apy = round(record['yield'] * 100, 2)
+                                    logger.info(self.log_message(
+                                        f'Staking record found | APY: <lc>{apy}%</lc> | Voters: <y>{voters}</y>'))
+                                    await asyncio.sleep(uniform(3, 5))
+                                    data = await self.make_staking(http_client=http_client,
+                                                                   device_id=record['deviceID'], amount=balance)
+                                    if data is not None:
                                         await asyncio.sleep(uniform(3, 5))
-                                        data = await self.make_staking(http_client=http_client,
-                                                                       device_id=record['deviceID'], amount=balance)
-                                        if data is not None:
-                                            await asyncio.sleep(uniform(3, 5))
-                                            result = await self.performing_transaction(http_client=http_client,
-                                                                                       data=data,
-                                                                                       wallet_address=strict_data[
-                                                                                           'evmAddress'])
-                                            if result is not None:
-                                                logger.success(self.log_message(
-                                                    f"Successfully staked <e>{balance}</e> tBOL"))
+                                        result = await self.performing_transaction(http_client=http_client,
+                                                                                   data=data,
+                                                                                   wallet_address=strict_data[
+                                                                                       'evmAddress'])
+                                        if result is not None:
+                                            logger.success(self.log_message(
+                                                f"Successfully staked <e>{balance}</e> tBOL"))
 
-                            elif not strict_data['isVerify']:
-                                await asyncio.sleep(uniform(3, 10))
-                                subscribed = await self.check_user_subscription(http_client=http_client)
-                                if not subscribed:
-                                    await self.tg_client.join_and_mute_tg_channel('https://t.me/boolofficial')
-                                else:
-                                    await self.verify_account(http_client=http_client)
+                        if not strict_data['isVerify']:
+                            await asyncio.sleep(uniform(3, 10))
+                            subscribed = await self.check_user_subscription(http_client=http_client)
+                            if not subscribed:
+                                await self.tg_client.join_and_mute_tg_channel('https://t.me/boolofficial')
+                            else:
+                                await self.verify_account(http_client=http_client)
 
                 except InvalidSession as error:
                     raise error
