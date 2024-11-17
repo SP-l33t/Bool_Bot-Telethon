@@ -52,24 +52,26 @@ class Tapper:
     async def get_tg_web_data(self) -> str:
         webview_url = await self.tg_client.get_app_webview_url('boolfamily_Bot', "join", "8T1K2")
 
-        tg_web_data = unquote(unquote(webview_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
-        self.user_data = json.loads(parse_qs(tg_web_data).get('user', [''])[0])
+        tg_web_data = parse_qs(unquote(webview_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
+
+        self.user_data = json.loads(tg_web_data.get('user', [''])[0])
 
         self.tg_client_id = self.user_data.get('id')
 
-        user_data = re.findall(r'user=([^&]+)', tg_web_data)[0]
-        chat_instance = re.findall(r'chat_instance=([^&]+)', tg_web_data)[0]
-        chat_type = re.findall(r'chat_type=([^&]+)', tg_web_data)[0]
-        ref = re.findall(r'start_param=([^&]+)', tg_web_data)
-        start_param = '\nstart_param=' + re.findall(r'start_param=([^&]+)', tg_web_data)[0] if ref else ""
-        auth_date = re.findall(r'auth_date=([^&]+)', tg_web_data)[0]
-        hash_value = re.findall(r'hash=([^&]+)', tg_web_data)[0]
+        user_data = tg_web_data.get('user')[0]
+        chat_instance = tg_web_data.get('chat_instance')[0]
+        chat_type = tg_web_data.get('chat_type')[0]
+        ref = tg_web_data.get('start_param', [])
+        start_param = f"\nstart_param={ref[0]}" if ref else ""
+        auth_date = tg_web_data.get('auth_date')[0]
+        hash_value = tg_web_data.get('hash')[0]
+        signature = tg_web_data.get('signature')[0]
 
         user = user_data.replace('"', '\"')
-        self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}{start_param}\nuser={user}"
+        self.auth_data = f"auth_date={auth_date}\nchat_instance={chat_instance}\nchat_type={chat_type}\nsignature={signature}{start_param}\nuser={user}"
         self.hash = hash_value
 
-        return tg_web_data
+        return self.auth_data
 
     async def get_strict_data(self, http_client: CloudflareScraper):
         try:
