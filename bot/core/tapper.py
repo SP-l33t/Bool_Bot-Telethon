@@ -98,7 +98,7 @@ class Tapper:
                 "data": self.auth_data,
                 "hash": self.hash
             }
-            response = await http_client.post('https://bot-api.bool.network/bool-tg-interface/user/register',
+            response = await http_client.post('https://miniapp.bool.network/backend/bool-tg-interface/user/register',
                                               json=json_data)
             response.raise_for_status()
 
@@ -127,7 +127,7 @@ class Tapper:
             log_error(self.log_message(f"Proxy: {proxy_url} | Error: {type(error).__name__}"))
             return False
 
-    async def do_task(self, http_client: CloudflareScraper, task_name: str, task_id: int):
+    async def do_task(self, http_client: CloudflareScraper, task_name: str, task_id: int, endpoint: str):
         try:
             logger.info(self.log_message(f"Performing task <lc>{task_name}</lc>..."))
 
@@ -136,7 +136,7 @@ class Tapper:
                 "data": self.auth_data,
                 "hash": self.hash
             }
-            response = await http_client.post(f'https://bot-api.bool.network/bool-tg-interface/assignment/do',
+            response = await http_client.post(f'https://miniapp.bool.network/backend/bool-tg-interface/assignment/{endpoint}',
                                               json=json_data)
             response.raise_for_status()
             response_json = await response.json()
@@ -150,17 +150,17 @@ class Tapper:
     async def get_user_staking(self, http_client: CloudflareScraper, wallet_address: str) -> dict:
         try:
             payload = {
-                'ownerAddress': wallet_address,
+                'address': wallet_address,
                 'pageNo': 1,
                 'pageSize': 200,
                 'yield': 1
             }
-            response = await http_client.get(f'https://beta-api.boolscan.com/bool-network-beta/blockchain/devices-vote',
+            response = await http_client.get(f'https://miniapp.bool.network/backend/bool-tg-interface/user/user-vote-devices',
                                              params=payload)
             response.raise_for_status()
             response_json = await response.json()
 
-            return response_json['data']['items']
+            return response_json.get('data', {}).get('records', [])
 
         except Exception as error:
             log_error(self.log_message(f"Unknown error when getting user staking: {error}"))
@@ -212,13 +212,13 @@ class Tapper:
     async def make_staking(self, http_client: CloudflareScraper, device_id: str, amount: int):
         try:
             json_data = {
-                "deviceId": [device_id],
-                "amount": [amount],
+                "deviceId": device_id,
+                "amount": amount,
                 "data": self.auth_data,
                 "hash": self.hash
             }
 
-            response = await http_client.post('https://bot-api.bool.network/bool-tg-interface/stake/do',
+            response = await http_client.post('https://miniapp.bool.network/backend/bool-tg-interface/stake/do',
                                               json=json_data)
             response.raise_for_status()
             response_json = await response.json()
@@ -342,7 +342,7 @@ class Tapper:
                 "hash": self.hash
             }
             response = await http_client.post(
-                f'https://bot-api.bool.network/bool-tg-interface/assignment/daily/list',
+                f'https://miniapp.bool.network/backend/bool-tg-interface/assignment/daily/list',
                 json=json_data)
             response.raise_for_status()
             response_json = await response.json()
@@ -353,7 +353,7 @@ class Tapper:
                     # await self.join_tg_channel(daily_task['url'])
                     json_data['assignmentId'] = daily_task['assignmentId']
                     response = await http_client.post(
-                        f'https://bot-api.bool.network/bool-tg-interface/assignment/daily/do',
+                        'https://miniapp.bool.network/backend/bool-tg-interface/assignment/daily/do',
                         json=json_data)
                     response.raise_for_status()
                     if (await response.json()).get('message') == "success":
@@ -390,7 +390,8 @@ class Tapper:
                         subs_amount += 1
                     elif is_subscribe_task:
                         continue
-                    status = await self.do_task(http_client, task['title'], int(task['assignmentId']))
+                    endpoint = 'do' if task['project'] != 'daily' else 'daily/assignment'
+                    status = await self.do_task(http_client, task['title'], int(task['assignmentId']), endpoint)
                     if status:
                         logger.success(self.log_message(f"Task <lc>{task['title']}</lc> - Completed | "
                                                         f"Reward: <e>{task['reward']}</e> tBOL"))
